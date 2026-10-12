@@ -3,59 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cinematic Universe Sequence</title>
+<title>4-Stage Cosmic Sequence</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
   body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
   #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
   
-  /* Initial Start Screen (Required to unlock Web Audio API) */
+  /* Initial Start Screen */
   #start-screen {
-    position: absolute;
-    inset: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-    color: #fff;
-    cursor: pointer;
-    transition: opacity 0.5s ease;
+    position: absolute; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    background: #000; color: #fff; cursor: pointer; transition: opacity 0.5s ease;
   }
-  .start-text {
-    font-size: 14px;
-    letter-spacing: 0.5em;
-    text-transform: uppercase;
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
-  }
+  .start-text { font-size: 14px; letter-spacing: 0.5em; text-transform: uppercase; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-  /* Flash Overlays */
-  #flash-white {
-    position: absolute; inset: 0; background: #fff; z-index: 50; opacity: 0; pointer-events: none;
-  }
-  #flash-black {
-    position: absolute; inset: 0; background: #000; z-index: 49; opacity: 0; pointer-events: none;
-  }
+  /* Stage Overlays */
+  #overlay-black { position: absolute; inset: 0; background: #000; z-index: 50; opacity: 0; pointer-events: none; }
+  #overlay-white { position: absolute; inset: 0; background: #fff; z-index: 49; opacity: 0; pointer-events: none; transition: opacity 0.1s; }
 </style>
 </head>
 <body>
 
 <div id="canvas-container"></div>
-<div id="flash-black"></div>
-<div id="flash-white"></div>
-<div id="start-screen"><div class="start-text">Click anywhere to initiate</div></div>
+<div id="overlay-white"></div>
+<div id="overlay-black"></div>
+<div id="start-screen"><div class="start-text">Click to Initiate</div></div>
 
-<!-- Load Three.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 (function() {
-  // --- Audio Engine ---
-  let audioCtx, masterGain, filterNode;
+  // --- AUDIO ENGINE ---
+  let audioCtx, masterGain;
+  let noiseNode, droneOsc1, droneOsc2, filterNode;
   
   function initAudio() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -64,59 +44,23 @@
     masterGain.connect(audioCtx.destination);
   }
 
-  function makeDistortionCurve(amount) {
-    const k = typeof amount === 'number' ? amount : 50, n_samples = 44100;
-    const curve = new Float32Array(n_samples), deg = Math.PI / 180;
-    for (let i = 0; i < n_samples; ++i) { 
-      let x = i * 2 / n_samples - 1; 
-      curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x)); 
-    }
-    return curve;
-  }
-
-  // --- Three.js Setup ---
+  // --- THREE.JS SETUP ---
   const container = document.getElementById('canvas-container');
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   container.appendChild(renderer.domElement);
 
-  // --- Particle System (Matter Pulling In) ---
-  const particleCount = 25000;
-  const particleGeo = new THREE.BufferGeometry();
-  const pPositions = new Float32Array(particleCount * 3);
-  const pColors = new Float32Array(particleCount * 3);
-
-  for(let i = 0; i < particleCount; i++) {
-      let r = 3.0 + Math.random() * 30.0;
-      let theta = Math.random() * Math.PI * 2;
-      let phi = (Math.random() - 0.5) * 1.5; 
-      pPositions[i*3] = r * Math.cos(theta) * Math.cos(phi);
-      pPositions[i*3+1] = r * Math.sin(phi);
-      pPositions[i*3+2] = r * Math.sin(theta) * Math.cos(phi);
-      pColors[i*3] = 1.0; pColors[i*3+1] = 0.5 + Math.random() * 0.5; pColors[i*3+2] = Math.random() * 0.5;
-  }
-  
-  particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-  particleGeo.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
-  const particleMat = new THREE.PointsMaterial({ size: 0.05, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8 });
-  const particlesMesh = new THREE.Points(particleGeo, particleMat);
-  scene.add(particlesMesh);
-
-  // --- Main Shader ---
+  // --- RAYMARCHING SHADER ---
   const fragmentShader = `
     uniform vec2 u_resolution;
     uniform float u_time;
-    uniform float u_time_mult;
     uniform float u_warp_mult;
-    uniform float u_reverse_warp;
     uniform float u_bh_intensity;
     uniform float u_galaxy_intensity;
-    uniform float u_point_light_size;
-    uniform float u_darkness;
-    
+
     #define STEPS 60
     #define RS 1.0
 
@@ -150,23 +94,13 @@
     void main() {
       vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
       
-      // Accelerated time for hyper speed
-      float scaledTime = u_time * u_time_mult;
-
-      // Reverse Space Warp (Explosive push outward)
-      float dist = length(uv);
-      vec2 centerDir = normalize(uv);
-      // When u_reverse_warp is high, it violently pushes UVs away from center
-      vec2 warpedUV = uv - centerDir * u_reverse_warp * smoothstep(0.0, 1.5, dist);
-      
-      // Constant organic space bending for Milky way
-      warpedUV += normalize(uv) * (u_galaxy_intensity * 0.05 * sin(scaledTime * 2.0 - length(warpedUV) * 10.0));
+      // Constant background ripple
+      vec2 warpedUV = uv + normalize(uv) * (u_galaxy_intensity * 0.05 * sin(u_time * 2.0 - length(uv) * 10.0));
 
       vec3 ro = vec3(0.0, 1.5, -6.8);
       vec3 forward = normalize(vec3(0.0) - ro);
       vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
       vec3 up = cross(right, forward);
-
       vec3 rd = normalize(forward * 1.55 + right * warpedUV.x + up * warpedUV.y);
 
       vec3 rayPos = ro; vec3 rayDir = rd; vec3 accumColor = vec3(0.0); float alpha = 0.0; bool hitHorizon = false;
@@ -190,10 +124,10 @@
             float phi = atan(hitP.z, hitP.x);
             vec3 diskCol = vec3(0.0); float diskDensity = 0.0;
 
-            // BLACK HOLE (Hyper Speed Accretion)
+            // 1. BLACK HOLE STATE
             if (u_bh_intensity > 0.0) {
                 float orbitSpeed = 0.55 * sqrt(RS / max(diskRadius, 0.1));
-                float swirlTime = scaledTime * (1.8 / sqrt(max(diskRadius, 0.1)));
+                float swirlTime = u_time * (1.8 / sqrt(max(diskRadius, 0.1)));
                 vec2 diskCoord = vec2(diskRadius * 3.5, phi * 4.0 - swirlTime);
                 float plasmaNoise = fbm(diskCoord + vec2(fbm(diskCoord * 1.5)));
                 
@@ -208,18 +142,19 @@
                 diskDensity = clamp(intensity * 1.4, 0.0, 1.0) * u_bh_intensity;
             }
 
-            // MILKY WAY GALAXY
+            // 4. MILKY WAY STATE
             if (u_galaxy_intensity > 0.0) {
                 float normR = diskRadius / 15.0;
                 float galArms = 6.0; float galTwist = 3.5;
-                float galSpeed = scaledTime * 0.4 / sqrt(max(diskRadius, 0.1)); 
+                float galSpeed = u_time * 0.2 / sqrt(max(diskRadius, 0.1)); 
                 float spiralPattern = pow(sin(galArms * (phi + diskRadius * galTwist - galSpeed)) * 0.5 + 0.5, 3.0);
                 
-                float galaxyDust = fbm(vec2(diskRadius * 3.0, phi * 4.0 - scaledTime * 0.1)) * spiralPattern;
+                float galaxyDust = fbm(vec2(diskRadius * 3.0, phi * 4.0 - u_time * 0.1)) * spiralPattern;
                 vec3 colMilkyWay = mix(vec3(0.05, 0.1, 0.5), vec3(0.8, 0.2, 0.7), normR) * 3.0 + vec3(1.0, 0.9, 1.0) * galaxyDust * 6.0;
 
-                float sunGlow = smoothstep(1.2, 0.0, diskRadius);
-                vec3 sunColor = vec3(1.0, 0.8, 0.2) * 12.0 * sunGlow + vec3(1.0, 0.4, 0.05) * smoothstep(1.8, 0.0, diskRadius) * fbm(hitP.xz * 12.0 - scaledTime);
+                // Bright core
+                float sunGlow = smoothstep(1.5, 0.0, diskRadius);
+                vec3 sunColor = vec3(1.0, 0.85, 0.6) * 10.0 * sunGlow;
 
                 vec3 galFinalColor = colMilkyWay * exp(-normR * 3.0) + sunColor;
                 float galDensityTarget = clamp((galaxyDust + sunGlow) * 2.0, 0.0, 1.0);
@@ -243,14 +178,6 @@
         finalColor = accumColor + (1.0 - alpha) * bgStars;
       }
 
-      // Darkness Override (for absolute pitch black)
-      finalColor *= u_darkness;
-
-      // Expanding Point Blank Light
-      float pLight = smoothstep(u_point_light_size, max(0.0, u_point_light_size - 0.05), dist);
-      finalColor += vec3(1.0, 0.98, 0.95) * pLight * 5.0; // Shines through darkness
-
-      // Tonemapping
       float vig = 1.0 - 0.28 * dot(uv, uv);
       vec3 toneMapped = finalColor / (finalColor + vec3(1.0));
       toneMapped = pow(toneMapped * vig, vec3(0.92));
@@ -264,81 +191,70 @@
   const uniforms = {
     u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     u_time: { value: 0.0 },
-    u_time_mult: { value: 1.0 },
     u_warp_mult: { value: 1.0 },
-    u_reverse_warp: { value: 0.0 },
     u_bh_intensity: { value: 1.0 },
-    u_galaxy_intensity: { value: 0.0 },
-    u_point_light_size: { value: 0.0 },
-    u_darkness: { value: 1.0 }
+    u_galaxy_intensity: { value: 0.0 }
   };
 
   const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms, depthWrite: false, depthTest: false });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   scene.add(quad); 
 
-  const pCamera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-  pCamera.position.set(0, 5, -12); pCamera.lookAt(0,0,0);
-
   window.addEventListener('resize', () => { 
     renderer.setSize(window.innerWidth, window.innerHeight); 
     uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight); 
-    pCamera.aspect = window.innerWidth / window.innerHeight; pCamera.updateProjectionMatrix(); 
   });
 
-  // --- Cinematic Timeline Engine ---
+  // --- TIMELINE LOGIC ---
   let sequenceActive = false;
   let seqStartTime = 0;
+  let bangTriggered = false;
   const clock = new THREE.Clock();
   
   const startScreen = document.getElementById('start-screen');
-  const flashWhite = document.getElementById('flash-white');
-  const flashBlack = document.getElementById('flash-black');
+  const overlayBlack = document.getElementById('overlay-black');
+  const overlayWhite = document.getElementById('overlay-white');
 
   startScreen.addEventListener('click', () => {
     initAudio();
     startScreen.style.opacity = '0';
     setTimeout(() => startScreen.remove(), 500);
+    
     sequenceActive = true;
     seqStartTime = clock.getElapsedTime();
-    
     const now = audioCtx.currentTime;
 
-    // AUDIO TIMELINE
-    
-    // 0.0 - 3.0s: Hyper speed wrap drone
-    const hyperOsc = audioCtx.createOscillator(); hyperOsc.type = 'sawtooth';
-    hyperOsc.frequency.setValueAtTime(40, now); hyperOsc.frequency.exponentialRampToValueAtTime(800, now + 3.0);
-    const hyperGain = audioCtx.createGain(); hyperGain.gain.setValueAtTime(0, now); hyperGain.gain.linearRampToValueAtTime(1.0, now + 2.9); hyperGain.gain.setValueAtTime(0, now + 3.0);
-    hyperOsc.connect(hyperGain).connect(masterGain); hyperOsc.start(now); hyperOsc.stop(now + 3.0);
-
-    // 3.0s: Quick Distortion Tear (Flash 1)
-    const distNode = audioCtx.createWaveShaper(); distNode.curve = makeDistortionCurve(1000);
-    const distOsc = audioCtx.createOscillator(); distOsc.type = 'square'; 
-    distOsc.frequency.setValueAtTime(100, now + 3.0); distOsc.frequency.exponentialRampToValueAtTime(4000, now + 3.1);
-    const distGain = audioCtx.createGain(); distGain.gain.setValueAtTime(1.5, now + 3.0); distGain.gain.setValueAtTime(0, now + 3.1); 
-    distOsc.connect(distNode).connect(distGain).connect(masterGain); distOsc.start(now + 3.0); distOsc.stop(now + 3.1);
-
-    // 3.1s - 4.5s: Absolute silence (Nothing scheduled)
-
-    // 4.5s - 6.0s: Expanding Light Ringing
-    const lightOsc = audioCtx.createOscillator(); lightOsc.type = 'sine';
-    lightOsc.frequency.setValueAtTime(2000, now + 4.5); lightOsc.frequency.exponentialRampToValueAtTime(100, now + 6.0);
-    const lightGain = audioCtx.createGain(); lightGain.gain.setValueAtTime(0, now + 4.4); lightGain.gain.linearRampToValueAtTime(1.0, now + 6.0); lightGain.gain.setValueAtTime(0, now + 6.0);
-    lightOsc.connect(lightGain).connect(masterGain); lightOsc.start(now + 4.5); lightOsc.stop(now + 6.0);
-
-    // 6.0s: Second Massive Big Bang (Reverse space)
-    const bangOsc = audioCtx.createOscillator(); bangOsc.type = 'sine'; 
-    bangOsc.frequency.setValueAtTime(150, now + 6.0); bangOsc.frequency.exponentialRampToValueAtTime(10, now + 12.0);
-    const bangGain = audioCtx.createGain(); bangGain.gain.setValueAtTime(2.0, now + 6.0); bangGain.gain.exponentialRampToValueAtTime(0.01, now + 15.0);
-    bangOsc.connect(bangGain).connect(masterGain); bangOsc.start(now + 6.0); bangOsc.stop(now + 15.0);
-    
-    // 6.2s+: Galaxy Drone
-    const galOsc = audioCtx.createOscillator(); galOsc.type = 'sawtooth'; galOsc.frequency.setValueAtTime(86, now + 6.2);
-    const galFilter = audioCtx.createBiquadFilter(); galFilter.type = 'lowpass'; galFilter.frequency.setValueAtTime(400, now + 6.2);
-    const galGain = audioCtx.createGain(); galGain.gain.setValueAtTime(0, now + 6.1); galGain.gain.linearRampToValueAtTime(0.3, now + 10.0);
-    galOsc.connect(galFilter).connect(galGain).connect(masterGain); galOsc.start(now + 6.2);
+    // AUDIO PHASE 1: Build up (0s to 3s)
+    const buildOsc = audioCtx.createOscillator(); buildOsc.type = 'sawtooth';
+    buildOsc.frequency.setValueAtTime(40, now); buildOsc.frequency.exponentialRampToValueAtTime(800, now + 3.0);
+    const buildGain = audioCtx.createGain(); buildGain.gain.setValueAtTime(0, now); buildGain.gain.linearRampToValueAtTime(1.0, now + 2.9); buildGain.gain.setValueAtTime(0, now + 3.0);
+    buildOsc.connect(buildGain).connect(masterGain); buildOsc.start(now); buildOsc.stop(now + 3.0);
   });
+
+  function triggerBigBangAudio() {
+    const now = audioCtx.currentTime;
+    
+    // AUDIO PHASE 3 & 4: Big Bang Boom + Slow Galaxy Pads
+    const bangOsc = audioCtx.createOscillator(); bangOsc.type = 'sine'; 
+    bangOsc.frequency.setValueAtTime(150, now); bangOsc.frequency.exponentialRampToValueAtTime(10, now + 8.0);
+    const bangGain = audioCtx.createGain(); bangGain.gain.setValueAtTime(2.0, now); bangGain.gain.exponentialRampToValueAtTime(0.01, now + 10.0);
+    bangOsc.connect(bangGain).connect(masterGain); bangOsc.start(now); bangOsc.stop(now + 10.0);
+    
+    // Noise blast
+    const bufferSize = audioCtx.sampleRate * 2;
+    const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    for (let i = 0; i < bufferSize; i++) noiseBuffer.getChannelData(0)[i] = (Math.random() * 2 - 1);
+    const noiseNode = audioCtx.createBufferSource(); noiseNode.buffer = noiseBuffer; noiseNode.loop = true;
+    const noiseFilter = audioCtx.createBiquadFilter(); noiseFilter.type = 'lowpass'; noiseFilter.frequency.setValueAtTime(8000, now); noiseFilter.frequency.exponentialRampToValueAtTime(100, now + 6.0);
+    const noiseGain = audioCtx.createGain(); noiseGain.gain.setValueAtTime(1.0, now); noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 6.0);
+    noiseNode.connect(noiseFilter).connect(noiseGain).connect(masterGain); noiseNode.start(now); noiseNode.stop(now + 6.0);
+
+    // Ethereal Galaxy Drone
+    const galOsc = audioCtx.createOscillator(); galOsc.type = 'sawtooth'; galOsc.frequency.setValueAtTime(86, now + 2.0);
+    const galFilter = audioCtx.createBiquadFilter(); galFilter.type = 'lowpass'; galFilter.frequency.setValueAtTime(400, now + 2.0);
+    const galGain = audioCtx.createGain(); galGain.gain.setValueAtTime(0, now); galGain.gain.linearRampToValueAtTime(0.3, now + 5.0);
+    galOsc.connect(galFilter).connect(galGain).connect(masterGain); galOsc.start(now);
+  }
 
   function animate() {
     requestAnimationFrame(animate);
@@ -348,77 +264,347 @@
     if(sequenceActive) {
         let t = elapsedTime - seqStartTime;
         
-        // 1. Hyper Speed Wrapping & Particles Pulling In
         if (t < 3.0) {
+            // Stage 1: Black Hole Wraps Space
             uniforms.u_bh_intensity.value = 1.0;
-            uniforms.u_time_mult.value = 1.0 + (t / 3.0) * 15.0; // Hyper speed rotation
-            uniforms.u_warp_mult.value = 1.0 + Math.pow(t / 3.0, 3.0) * 80.0; // Space aggressively wrapping
+            uniforms.u_galaxy_intensity.value = 0.0;
+            // Exponential warp buildup pulling the edges inward
+            uniforms.u_warp_mult.value = 1.0 + Math.pow(t / 3.0, 4.0) * 150.0; 
             
-            const positions = particleGeo.attributes.position.array;
-            for(let i=0; i<particleCount; i++) {
-                let ix = i*3, iy = i*3+1, iz = i*3+2;
-                let x = positions[ix], y = positions[iy], z = positions[iz];
-                let dist = Math.sqrt(x*x + y*y + z*z);
-                if (dist > 0.1) {
-                    let pullForce = (5.0 + Math.pow(t, 3.0) * 15.0) / Math.max(dist, 0.5);
-                    positions[ix] -= (x/dist) * pullForce * 0.016; 
-                    positions[iy] -= (y/dist) * pullForce * 0.016; 
-                    positions[iz] -= (z/dist) * pullForce * 0.016;
-                }
-            }
-            particleGeo.attributes.position.needsUpdate = true;
-            
-        // 2. Quick Flash (Big Bang 1)
-        } else if (t < 3.1) {
-            particlesMesh.visible = false; 
-            uniforms.u_bh_intensity.value = 0.0; 
-            flashWhite.style.opacity = '1';
-            
-        // 3. Absolutely Black
-        } else if (t < 4.5) {
-            flashWhite.style.opacity = '0';
-            flashBlack.style.opacity = '1'; // HTML Pure Black
-            uniforms.u_darkness.value = 0.0; // Shader Pure Black
+        } else if (t < 4.0) {
+            // Stage 2: Absolutely Black
+            overlayBlack.style.opacity = '1';
+            if(masterGain) masterGain.gain.value = 0; // Absolute Silence
             uniforms.u_warp_mult.value = 0.0;
+            uniforms.u_bh_intensity.value = 0.0; // Remove black hole
             
-        // 4. Point Blank Light Appears & Expands
-        } else if (t < 6.0) {
-            flashBlack.style.opacity = '0'; 
-            uniforms.u_darkness.value = 0.0; // Background stays dark
-            let expandTime = t - 4.5;
-            uniforms.u_point_light_size.value = Math.pow(expandTime / 1.5, 2.0) * 0.4;
-            
-        // 5. Reverse Space & Quick Flash 2 (Big Bang 2)
-        } else if (t < 6.2) {
-            uniforms.u_darkness.value = 1.0; 
-            uniforms.u_point_light_size.value = 0.0;
-            flashWhite.style.opacity = '1';
-            
-            // Violent Negative Warp (Reverse Space)
-            uniforms.u_reverse_warp.value = 5.0; // High outward push
-            
-        // 6. Form Milky Way Galaxy
         } else {
-            let galTime = t - 6.2;
+            // Stage 3: Big Bang (at t = 4.0)
+            if (!bangTriggered) {
+                overlayBlack.style.opacity = '0';
+                overlayWhite.style.opacity = '1'; // Instant Whiteout
+                if(masterGain) masterGain.gain.value = 1;
+                triggerBigBangAudio();
+                bangTriggered = true;
+            }
             
-            flashWhite.style.opacity = Math.max(0.0, 1.0 - galTime * 0.5).toString();
-            uniforms.u_reverse_warp.value = Math.max(0.0, 5.0 - galTime * 10.0); // Snap warp back
-            uniforms.u_warp_mult.value = 2.0; // Settles to constant light bending
-            uniforms.u_time_mult.value = 0.5; // Normal speed
+            // Stage 4: Slowly Milky Way
+            let galTime = t - 4.0;
+            overlayWhite.style.opacity = Math.max(0.0, 1.0 - galTime / 3.0).toString(); // Fade flash over 3s
             
-            // Unveil the Milky Way gradually
-            uniforms.u_galaxy_intensity.value = Math.min(1.0, galTime / 3.0);
+            uniforms.u_warp_mult.value = 2.0; // Normal ambient space bending
+            uniforms.u_galaxy_intensity.value = Math.min(1.0, galTime / 8.0); // Forms slowly over 8s
         }
     }
 
-    renderer.autoClear = true; 
     renderer.render(scene, camera); 
-    
-    // Render particles on top if in phase 1
-    if (sequenceActive && particlesMesh.visible) {
-        renderer.autoClear = false; 
-        renderer.render(scene, pCamera); 
+  }
+
+  animate();
+})();
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4-Stage Cosmic Sequence</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
+  #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+  
+  /* Initial Start Screen */
+  #start-screen {
+    position: absolute; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    background: #000; color: #fff; cursor: pointer; transition: opacity 0.5s ease;
+  }
+  .start-text { font-size: 14px; letter-spacing: 0.5em; text-transform: uppercase; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+  /* Stage Overlays */
+  #overlay-black { position: absolute; inset: 0; background: #000; z-index: 50; opacity: 0; pointer-events: none; }
+  #overlay-white { position: absolute; inset: 0; background: #fff; z-index: 49; opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+<div id="overlay-white"></div>
+<div id="overlay-black"></div>
+<div id="start-screen"><div class="start-text">Click to Initiate</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+(function() {
+  // --- AUDIO ENGINE ---
+  let audioCtx, masterGain;
+  let noiseNode, droneOsc1, droneOsc2, filterNode;
+  
+  function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    masterGain.connect(audioCtx.destination);
+  }
+
+  // --- THREE.JS SETUP ---
+  const container = document.getElementById('canvas-container');
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  container.appendChild(renderer.domElement);
+
+  // --- RAYMARCHING SHADER ---
+  const fragmentShader = `
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform float u_warp_mult;
+    uniform float u_bh_intensity;
+    uniform float u_galaxy_intensity;
+
+    #define STEPS 60
+    #define RS 1.0
+
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+    float noise(vec2 p) {
+      vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x), mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
     }
+    float fbm(vec2 p) {
+      float v = 0.0; float a = 0.5; mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+      for (int i = 0; i < 4; ++i) { v += a * noise(p); p = rot * p * 2.0 + vec2(100.0); a *= 0.5; }
+      return v;
+    }
+
+    vec3 backgroundStars(vec3 dir, float warpRipple) {
+      dir.xy += vec2(sin(dir.z * 18.0 + u_time * 3.0), cos(dir.z * 18.0 + u_time * 3.0)) * 0.015 * warpRipple * 0.2;
+      dir = normalize(dir);
+      vec2 uv = vec2(atan(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0)));
+      float n = hash(floor(uv * 180.0));
+      vec3 starCol = vec3(0.0);
+      if (n > 0.985) {
+        float b = pow((n - 0.985) / 0.015, 6.0) * (0.6 + 0.4 * sin(u_time * 6.0 + n * 40.0));
+        starCol = vec3(b * 1.5) * mix(vec3(0.7, 0.85, 1.0), vec3(1.0, 0.8, 0.6), hash(uv));
+      }
+      float nebula = fbm(uv * 2.5 + vec2(u_time * 0.01));
+      vec3 nebCol = mix(vec3(0.02, 0.04, 0.08), vec3(0.08, 0.03, 0.09), nebula) * smoothstep(0.3, 0.8, nebula);
+      nebCol = mix(nebCol, nebCol * 2.0 + vec3(0.05, 0.0, 0.1), u_galaxy_intensity);
+      return starCol + nebCol;
+    }
+
+    void main() {
+      vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+      
+      // Constant background ripple
+      vec2 warpedUV = uv + normalize(uv) * (u_galaxy_intensity * 0.05 * sin(u_time * 2.0 - length(uv) * 10.0));
+
+      vec3 ro = vec3(0.0, 1.5, -6.8);
+      vec3 forward = normalize(vec3(0.0) - ro);
+      vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+      vec3 up = cross(right, forward);
+      vec3 rd = normalize(forward * 1.55 + right * warpedUV.x + up * warpedUV.y);
+
+      vec3 rayPos = ro; vec3 rayDir = rd; vec3 accumColor = vec3(0.0); float alpha = 0.0; bool hitHorizon = false;
+      mat3 tiltMat = mat3(1.0, 0.0, 0.0, 0.0, cos(0.2), -sin(0.2), 0.0, sin(0.2), cos(0.2));
+      float h = 0.16;
+      float currentRS = mix(0.0, RS, u_bh_intensity);
+
+      for (int i = 0; i < STEPS; i++) {
+        float r = length(rayPos);
+        if (r < currentRS * 1.02 && u_bh_intensity > 0.0) { hitHorizon = true; break; }
+
+        float bendForce = mix(0.01 / (r*r), 1.45 * RS / (r*r*r*r), u_bh_intensity);
+        vec3 accel = -rayPos * bendForce * u_warp_mult;
+        rayDir = normalize(rayDir + accel * h); rayPos += rayDir * h; h = max(0.05, r * 0.045);
+
+        vec3 p0 = tiltMat * (rayPos - rayDir*h); vec3 p1 = tiltMat * rayPos;
+        if ((p0.y * p1.y) < 0.0) {
+          float tPlane = -p0.y / (p1.y - p0.y); vec3 hitP = mix(p0, p1, tPlane); float diskRadius = length(hitP.xz);
+
+          if (diskRadius >= mix(0.0, 1.8, u_bh_intensity) && diskRadius <= mix(15.0, 6.2, u_bh_intensity)) {
+            float phi = atan(hitP.z, hitP.x);
+            vec3 diskCol = vec3(0.0); float diskDensity = 0.0;
+
+            // 1. BLACK HOLE STATE
+            if (u_bh_intensity > 0.0) {
+                float orbitSpeed = 0.55 * sqrt(RS / max(diskRadius, 0.1));
+                float swirlTime = u_time * (1.8 / sqrt(max(diskRadius, 0.1)));
+                vec2 diskCoord = vec2(diskRadius * 3.5, phi * 4.0 - swirlTime);
+                float plasmaNoise = fbm(diskCoord + vec2(fbm(diskCoord * 1.5)));
+                
+                float normR = (diskRadius - 1.8) / (6.2 - 1.8);
+                float intensity = smoothstep(0.0, 0.15, normR) * smoothstep(1.0, 0.6, normR) * (0.6 + 0.7 * plasmaNoise);
+                
+                vec3 colCore = vec3(1.0, 0.95, 0.85); vec3 colMid = vec3(1.0, 0.58, 0.12); vec3 colRim = vec3(0.75, 0.12, 0.02);
+                float temp = pow(1.0 - normR, 1.6);
+                diskCol = mix(colRim, colMid, smoothstep(0.0, 0.6, temp));
+                diskCol = mix(diskCol, colCore, smoothstep(0.6, 1.0, temp));
+                
+                diskDensity = clamp(intensity * 1.4, 0.0, 1.0) * u_bh_intensity;
+            }
+
+            // 4. MILKY WAY STATE
+            if (u_galaxy_intensity > 0.0) {
+                float normR = diskRadius / 15.0;
+                float galArms = 6.0; float galTwist = 3.5;
+                float galSpeed = u_time * 0.2 / sqrt(max(diskRadius, 0.1)); 
+                float spiralPattern = pow(sin(galArms * (phi + diskRadius * galTwist - galSpeed)) * 0.5 + 0.5, 3.0);
+                
+                float galaxyDust = fbm(vec2(diskRadius * 3.0, phi * 4.0 - u_time * 0.1)) * spiralPattern;
+                vec3 colMilkyWay = mix(vec3(0.05, 0.1, 0.5), vec3(0.8, 0.2, 0.7), normR) * 3.0 + vec3(1.0, 0.9, 1.0) * galaxyDust * 6.0;
+
+                // Bright core
+                float sunGlow = smoothstep(1.5, 0.0, diskRadius);
+                vec3 sunColor = vec3(1.0, 0.85, 0.6) * 10.0 * sunGlow;
+
+                vec3 galFinalColor = colMilkyWay * exp(-normR * 3.0) + sunColor;
+                float galDensityTarget = clamp((galaxyDust + sunGlow) * 2.0, 0.0, 1.0);
+
+                diskCol = mix(diskCol, galFinalColor, u_galaxy_intensity);
+                diskDensity = mix(diskDensity, galDensityTarget, u_galaxy_intensity);
+            }
+
+            accumColor += (1.0 - alpha) * diskCol * diskDensity * 1.8;
+            alpha += (1.0 - alpha) * diskDensity;
+            if (alpha > 0.96) break;
+          }
+        }
+      }
+
+      vec3 finalColor = vec3(0.0);
+      if (hitHorizon) {
+        finalColor = accumColor; 
+      } else {
+        vec3 bgStars = backgroundStars(rayDir, u_warp_mult);
+        finalColor = accumColor + (1.0 - alpha) * bgStars;
+      }
+
+      float vig = 1.0 - 0.28 * dot(uv, uv);
+      vec3 toneMapped = finalColor / (finalColor + vec3(1.0));
+      toneMapped = pow(toneMapped * vig, vec3(0.92));
+
+      gl_FragColor = vec4(toneMapped, 1.0);
+    }
+  `;
+
+  const vertexShader = `void main() { gl_Position = vec4(position, 1.0); }`;
+
+  const uniforms = {
+    u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    u_time: { value: 0.0 },
+    u_warp_mult: { value: 1.0 },
+    u_bh_intensity: { value: 1.0 },
+    u_galaxy_intensity: { value: 0.0 }
+  };
+
+  const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms, depthWrite: false, depthTest: false });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  scene.add(quad); 
+
+  window.addEventListener('resize', () => { 
+    renderer.setSize(window.innerWidth, window.innerHeight); 
+    uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight); 
+  });
+
+  // --- TIMELINE LOGIC ---
+  let sequenceActive = false;
+  let seqStartTime = 0;
+  let bangTriggered = false;
+  const clock = new THREE.Clock();
+  
+  const startScreen = document.getElementById('start-screen');
+  const overlayBlack = document.getElementById('overlay-black');
+  const overlayWhite = document.getElementById('overlay-white');
+
+  startScreen.addEventListener('click', () => {
+    initAudio();
+    startScreen.style.opacity = '0';
+    setTimeout(() => startScreen.remove(), 500);
+    
+    sequenceActive = true;
+    seqStartTime = clock.getElapsedTime();
+    const now = audioCtx.currentTime;
+
+    // AUDIO PHASE 1: Build up (0s to 3s)
+    const buildOsc = audioCtx.createOscillator(); buildOsc.type = 'sawtooth';
+    buildOsc.frequency.setValueAtTime(40, now); buildOsc.frequency.exponentialRampToValueAtTime(800, now + 3.0);
+    const buildGain = audioCtx.createGain(); buildGain.gain.setValueAtTime(0, now); buildGain.gain.linearRampToValueAtTime(1.0, now + 2.9); buildGain.gain.setValueAtTime(0, now + 3.0);
+    buildOsc.connect(buildGain).connect(masterGain); buildOsc.start(now); buildOsc.stop(now + 3.0);
+  });
+
+  function triggerBigBangAudio() {
+    const now = audioCtx.currentTime;
+    
+    // AUDIO PHASE 3 & 4: Big Bang Boom + Slow Galaxy Pads
+    const bangOsc = audioCtx.createOscillator(); bangOsc.type = 'sine'; 
+    bangOsc.frequency.setValueAtTime(150, now); bangOsc.frequency.exponentialRampToValueAtTime(10, now + 8.0);
+    const bangGain = audioCtx.createGain(); bangGain.gain.setValueAtTime(2.0, now); bangGain.gain.exponentialRampToValueAtTime(0.01, now + 10.0);
+    bangOsc.connect(bangGain).connect(masterGain); bangOsc.start(now); bangOsc.stop(now + 10.0);
+    
+    // Noise blast
+    const bufferSize = audioCtx.sampleRate * 2;
+    const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    for (let i = 0; i < bufferSize; i++) noiseBuffer.getChannelData(0)[i] = (Math.random() * 2 - 1);
+    const noiseNode = audioCtx.createBufferSource(); noiseNode.buffer = noiseBuffer; noiseNode.loop = true;
+    const noiseFilter = audioCtx.createBiquadFilter(); noiseFilter.type = 'lowpass'; noiseFilter.frequency.setValueAtTime(8000, now); noiseFilter.frequency.exponentialRampToValueAtTime(100, now + 6.0);
+    const noiseGain = audioCtx.createGain(); noiseGain.gain.setValueAtTime(1.0, now); noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 6.0);
+    noiseNode.connect(noiseFilter).connect(noiseGain).connect(masterGain); noiseNode.start(now); noiseNode.stop(now + 6.0);
+
+    // Ethereal Galaxy Drone
+    const galOsc = audioCtx.createOscillator(); galOsc.type = 'sawtooth'; galOsc.frequency.setValueAtTime(86, now + 2.0);
+    const galFilter = audioCtx.createBiquadFilter(); galFilter.type = 'lowpass'; galFilter.frequency.setValueAtTime(400, now + 2.0);
+    const galGain = audioCtx.createGain(); galGain.gain.setValueAtTime(0, now); galGain.gain.linearRampToValueAtTime(0.3, now + 5.0);
+    galOsc.connect(galFilter).connect(galGain).connect(masterGain); galOsc.start(now);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const elapsedTime = clock.getElapsedTime(); 
+    uniforms.u_time.value = elapsedTime;
+
+    if(sequenceActive) {
+        let t = elapsedTime - seqStartTime;
+        
+        if (t < 3.0) {
+            // Stage 1: Black Hole Wraps Space
+            uniforms.u_bh_intensity.value = 1.0;
+            uniforms.u_galaxy_intensity.value = 0.0;
+            // Exponential warp buildup pulling the edges inward
+            uniforms.u_warp_mult.value = 1.0 + Math.pow(t / 3.0, 4.0) * 150.0; 
+            
+        } else if (t < 4.0) {
+            // Stage 2: Absolutely Black
+            overlayBlack.style.opacity = '1';
+            if(masterGain) masterGain.gain.value = 0; // Absolute Silence
+            uniforms.u_warp_mult.value = 0.0;
+            uniforms.u_bh_intensity.value = 0.0; // Remove black hole
+            
+        } else {
+            // Stage 3: Big Bang (at t = 4.0)
+            if (!bangTriggered) {
+                overlayBlack.style.opacity = '0';
+                overlayWhite.style.opacity = '1'; // Instant Whiteout
+                if(masterGain) masterGain.gain.value = 1;
+                triggerBigBangAudio();
+                bangTriggered = true;
+            }
+            
+            // Stage 4: Slowly Milky Way
+            let galTime = t - 4.0;
+            overlayWhite.style.opacity = Math.max(0.0, 1.0 - galTime / 3.0).toString(); // Fade flash over 3s
+            
+            uniforms.u_warp_mult.value = 2.0; // Normal ambient space bending
+            uniforms.u_galaxy_intensity.value = Math.min(1.0, galTime / 8.0); // Forms slowly over 8s
+        }
+    }
+
+    renderer.render(scene, camera); 
   }
 
   animate();
